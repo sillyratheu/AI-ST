@@ -5,7 +5,7 @@ import telebot
 import streamlit as st
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 # --- CONFIGURATION ---
 TELEGRAM_TOKEN = "8729162384:AAFktx5Ot_zBOiK1WdusgmySym_KrPxVcU0"
@@ -78,7 +78,7 @@ def handle_telegram_message(message):
         # 1. Show searching status
         status_msg = bot.reply_to(message, "🔍 NotRa is searching the web...")
         
-        # Perform DuckDuckGo Search
+        # Perform Web Search
         search_context = search_duckduckgo(user_text)
         
         # 2. Update status to thinking before generating reply
@@ -159,4 +159,3 @@ if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
             response_text = generate_ai_reply(full_messages)
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
-    
