@@ -5,4 +5,3 @@ transformers
 accelerate
 pytelegrambotapi
 requests
-ddgs
