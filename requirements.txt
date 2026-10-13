@@ -1,5 +1,6 @@
-fastapi
-uvicorn
-torch
+streamlit
 transformers
+torch
 accelerate
+pytelegrambotapi
+requests
