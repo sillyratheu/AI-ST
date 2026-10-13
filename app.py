@@ -17,7 +17,7 @@ SYSTEM_PROMPT = (
     "You were created by Ramim. You have NO connection to Alibaba or any other company—if anyone asks who made you, "
     "who owns you, or what model you are based on, you must proudly and strictly state that you are NotRa, built and owned exclusively by Ramim. "
     "You are an expert programmer and can write clean, professional HTML, CSS, JavaScript, and Python code whenever asked. "
-    "Keep your answers short, crisp, and direct for maximum speed."
+    "Keep your answers short and crisp."
 )
 
 @st.cache_resource
@@ -40,7 +40,7 @@ def generate_ai_reply(history_messages):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=90,  # Fast short response limit
+            max_new_tokens=80,
             temperature=0.6,
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id
@@ -53,7 +53,7 @@ def search_wikipedia(query):
     try:
         url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}"
         headers = {"User-Agent": "NotRaBot/1.0"}
-        response = requests.get(url, headers=headers, timeout=4)
+        response = requests.get(url, headers=headers, timeout=3)
         if response.status_code == 200:
             data = response.json()
             if "extract" in data:
@@ -65,42 +65,39 @@ def search_wikipedia(query):
 # --- TELEGRAM BOT HANDLERS ---
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "Hey there! I'm NotRa, your AI best friend created by Ramim. Ask me anything, write code, or ask me to generate images!")
+    bot.reply_to(message, "Hey there! I'm NotRa, your AI best friend created by Ramim.")
 
 @bot.message_handler(func=lambda message: True)
 def handle_telegram_message(message):
     user_text = message.text
     
     try:
-        # Check if user wants an image (Pollinations AI integration)
+        # Check if user wants an image (Fixed direct Pollinations URL)
         if "image" in user_text.lower() or "picture" in user_text.lower() or "draw" in user_text.lower():
             bot.send_chat_action(message.chat.id, 'upload_photo')
             bot.reply_to(message, "🎨 Generating your image, please wait...")
             
-            encoded_prompt = requests.utils.quote(user_text)
-            img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-            
+            clean_prompt = user_text.replace("image", "").replace("picture", "").replace("draw", "").strip()
+            if not clean_prompt:
+                clean_prompt = "beautiful scenery"
+                
+            img_url = f"https://pollinations.ai/p/{requests.utils.quote(clean_prompt)}"
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
         # Text / Search handling with dynamic status updates
         bot.send_chat_action(message.chat.id, 'typing')
-        
-        # 1. Show searching status
         status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
         
-        # Check Wikipedia if it's a factual or broad question
         search_context = ""
-        if len(user_text.split()) > 2 or any(k in user_text.lower() for k in ["who", "what", "where", "when", "history", "science", "about"]):
+        if len(user_text.split()) > 2 or any(k in user_text.lower() for k in ["who", "what", "where", "when", "history", "science", "wikipedia"]):
             search_context = search_wikipedia(user_text)
         
-        # 2. Update status to thinking
         try:
             bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
         except Exception:
             pass
 
-        # Build prompt with reference info if available
         user_prompt_with_context = user_text
         if search_context:
             user_prompt_with_context = f"Reference: {search_context}\n\nQuestion: {user_text}"
@@ -112,7 +109,6 @@ def handle_telegram_message(message):
         
         response_text = generate_ai_reply(messages)
         
-        # Remove status message and send response
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
         except Exception:
