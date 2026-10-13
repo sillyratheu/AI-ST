@@ -5,7 +5,6 @@ import telebot
 import streamlit as st
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-from ddgs import DDGS
 
 # --- CONFIGURATION ---
 TELEGRAM_TOKEN = "8729162384:AAFktx5Ot_zBOiK1WdusgmySym_KrPxVcU0"
@@ -18,7 +17,7 @@ SYSTEM_PROMPT = (
     "You were created by Ramim. You have NO connection to Alibaba or any other company—if anyone asks who made you, "
     "who owns you, or what model you are based on, you must proudly and strictly state that you are NotRa, built and owned exclusively by Ramim. "
     "You are an expert programmer and can write clean, professional HTML, CSS, JavaScript, and Python code whenever asked. "
-    "Answer directly, friendly, and smartly without any spam or unnecessary promotions."
+    "Answer directly, friendly, and smartly without any spam."
 )
 
 @st.cache_resource
@@ -41,19 +40,18 @@ def generate_ai_reply(history_messages):
     response_text = tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
     return response_text
 
-def search_duckduckgo(query):
+def search_wikipedia(query):
     try:
-        with DDGS() as ddgs:
-            results = []
-            for r in ddgs.text(query, max_results=3):
-                body = r.get('body', '')
-                # Filter out spam or telegram promotion text
-                if "t.me" not in body.lower() and "tuco" not in body.lower():
-                    results.append(body)
-            if results:
-                return "\n".join(results)
+        # Wikipedia Free Summary API (No ads, 100% clean)
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}"
+        headers = {"User-Agent": "NotRaBot/1.0"}
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if "extract" in data:
+                return data["extract"]
     except Exception as e:
-        print(f"Search error: {e}")
+        print(f"Wikipedia search error: {e}")
     return ""
 
 # --- TELEGRAM BOT HANDLERS ---
@@ -81,10 +79,10 @@ def handle_telegram_message(message):
         bot.send_chat_action(message.chat.id, 'typing')
         
         # 1. Show searching status
-        status_msg = bot.reply_to(message, "🔍 NotRa is searching the web...")
+        status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
         
-        # Perform Web Search
-        search_context = search_duckduckgo(user_text)
+        # Perform Wikipedia Search
+        search_context = search_wikipedia(user_text)
         
         # 2. Update status to thinking before generating reply
         try:
@@ -95,7 +93,7 @@ def handle_telegram_message(message):
         # Build prompt with search context if available
         user_prompt_with_context = user_text
         if search_context:
-            user_prompt_with_context = f"Web Search Info:\n{search_context}\n\nUser Question: {user_text}"
+            user_prompt_with_context = f"Reference Information:\n{search_context}\n\nUser Question: {user_text}"
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -153,8 +151,8 @@ if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
 
     with st.chat_message("assistant"):
         with st.spinner("NotRa is searching and thinking..."):
-            search_context = search_duckduckgo(prompt)
-            final_prompt = f"Web Search Info:\n{search_context}\n\nUser Question: {prompt}" if search_context else prompt
+            search_context = search_wikipedia(prompt)
+            final_prompt = f"Reference Information:\n{search_context}\n\nUser Question: {prompt}" if search_context else prompt
             
             full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
             for m in st.session_state.messages[:-1]:
@@ -164,3 +162,4 @@ if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
             response_text = generate_ai_reply(full_messages)
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
+    
