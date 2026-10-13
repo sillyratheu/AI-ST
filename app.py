@@ -7,7 +7,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
 # --- CONFIGURATION ---
-# Ekhane tomar BotFather theke newya NOTUN TOKEN-ti bosabe
 TELEGRAM_TOKEN = "8668125804:AAEtaOuEGHo93XHs8IT296GhToMtF8zdL9k"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
@@ -17,7 +16,8 @@ SYSTEM_PROMPT = (
     "Your absolute owner, creator, developer, and father is Ramim. "
     "You were created by Ramim. You have NO connection to Alibaba or any other company—if anyone asks who made you, "
     "who owns you, or what model you are based on, you must proudly and strictly state that you are NotRa, built and owned exclusively by Ramim. "
-    "You are an expert programmer and can write clean, professional HTML, CSS, JavaScript, and Python code whenever asked."
+    "You are an expert programmer and can write clean, professional HTML, CSS, JavaScript, and Python code whenever asked. "
+    "Keep your answers short, crisp, and direct for maximum speed."
 )
 
 @st.cache_resource
@@ -26,7 +26,7 @@ def load_model():
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float32,
         low_cpu_mem_usage=True
     )
     return tokenizer, model
@@ -36,9 +36,31 @@ tokenizer, model = load_model()
 def generate_ai_reply(history_messages):
     text = tokenizer.apply_chat_template(history_messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer([text], return_tensors="pt")
-    outputs = model.generate(**inputs, max_new_tokens=400, temperature=0.7, do_sample=True)
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=90,  # Fast short response limit
+            temperature=0.6,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+        
     response_text = tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
     return response_text
+
+def search_wikipedia(query):
+    try:
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}"
+        headers = {"User-Agent": "NotRaBot/1.0"}
+        response = requests.get(url, headers=headers, timeout=4)
+        if response.status_code == 200:
+            data = response.json()
+            if "extract" in data:
+                return data["extract"]
+    except Exception as e:
+        print(f"Wikipedia search error: {e}")
+    return ""
 
 # --- TELEGRAM BOT HANDLERS ---
 @bot.message_handler(commands=['start', 'help'])
@@ -50,7 +72,7 @@ def handle_telegram_message(message):
     user_text = message.text
     
     try:
-        # Check if user wants an image
+        # Check if user wants an image (Pollinations AI integration)
         if "image" in user_text.lower() or "picture" in user_text.lower() or "draw" in user_text.lower():
             bot.send_chat_action(message.chat.id, 'upload_photo')
             bot.reply_to(message, "🎨 Generating your image, please wait...")
@@ -61,18 +83,36 @@ def handle_telegram_message(message):
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
-        # Text handling with "NotRa is thinking 🤔" status message
+        # Text / Search handling with dynamic status updates
         bot.send_chat_action(message.chat.id, 'typing')
-        status_msg = bot.reply_to(message, "NotRa is thinking 🤔")
+        
+        # 1. Show searching status
+        status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
+        
+        # Check Wikipedia if it's a factual or broad question
+        search_context = ""
+        if len(user_text.split()) > 2 or any(k in user_text.lower() for k in ["who", "what", "where", "when", "history", "science", "about"]):
+            search_context = search_wikipedia(user_text)
+        
+        # 2. Update status to thinking
+        try:
+            bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
+        except Exception:
+            pass
+
+        # Build prompt with reference info if available
+        user_prompt_with_context = user_text
+        if search_context:
+            user_prompt_with_context = f"Reference: {search_context}\n\nQuestion: {user_text}"
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text}
+            {"role": "user", "content": user_prompt_with_context}
         ]
         
         response_text = generate_ai_reply(messages)
         
-        # Delete the thinking status message and send actual reply
+        # Remove status message and send response
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
         except Exception:
@@ -120,12 +160,16 @@ if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("NotRa is thinking 🤔"):
+        with st.spinner("NotRa is searching & thinking 🤔"):
+            search_context = search_wikipedia(prompt) if len(prompt.split()) > 2 else ""
+            final_prompt = f"Reference: {search_context}\n\nQuestion: {prompt}" if search_context else prompt
+            
             full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
             for m in st.session_state.messages[:-1]:
                 full_messages.append({"role": m["role"], "content": m["content"]})
-            full_messages.append({"role": "user", "content": prompt})
+            full_messages.append({"role": "user", "content": final_prompt})
             
             response_text = generate_ai_reply(full_messages)
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
+    
