@@ -15,7 +15,7 @@ def load_model():
 
 tokenizer, model = load_model()
 
-# Query parameter theke prompt read kora
+# Query parameters theke prompt read kora (New Streamlit syntax)
 query_params = st.query_params
 user_prompt = query_params.get("prompt", "")
 
@@ -32,7 +32,7 @@ if user_prompt:
     generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, outputs)]
     response_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     
-    # Shudhu AI er response-tui print korbe, kono UI ba extra text thakbe na
-    st.text(response_text)
+    # Clear text output for API response
+    st.write(response_text)
 else:
-    st.write("API is active. Use ?prompt=your_text")
+    st.write("API is active.")
