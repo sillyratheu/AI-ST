@@ -4,3 +4,4 @@ torch
 accelerate
 pytelegrambotapi
 requests
+duckduckgo_search
