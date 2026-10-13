@@ -1,5 +1,5 @@
-streamlit
+fastapi
+uvicorn
 torch
-torchvision
 transformers
 accelerate
