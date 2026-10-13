@@ -15,7 +15,7 @@ def load_model():
 
 tokenizer, model = load_model()
 
-# URL theke prompt neoa (jemon: your-app.streamlit.app/?prompt=Hello)
+# Query parameter theke prompt read kora
 query_params = st.query_params
 user_prompt = query_params.get("prompt", "")
 
@@ -32,8 +32,7 @@ if user_prompt:
     generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, outputs)]
     response_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     
-    # JSON ba direct text format-e output dewa jate HTML fetch korte pare
-    st.write(response_text)
+    # Shudhu AI er response-tui print korbe, kono UI ba extra text thakbe na
+    st.text(response_text)
 else:
-    st.title("NotRa AI API is Running!")
-    st.write("Use ?prompt=your_message in the URL to get a response.")
+    st.write("API is active. Use ?prompt=your_text")
