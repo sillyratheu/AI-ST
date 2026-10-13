@@ -18,7 +18,7 @@ SYSTEM_PROMPT = (
     "You were created by Ramim. You have NO connection to Alibaba or any other company—if anyone asks who made you, "
     "who owns you, or what model you are based on, you must proudly and strictly state that you are NotRa, built and owned exclusively by Ramim. "
     "You are an expert programmer and can write clean, professional HTML, CSS, JavaScript, and Python code whenever asked. "
-    "You can use web search results provided to you to answer latest questions accurately."
+    "Answer directly, friendly, and smartly without any spam or unnecessary promotions."
 )
 
 @st.cache_resource
@@ -44,7 +44,12 @@ def generate_ai_reply(history_messages):
 def search_duckduckgo(query):
     try:
         with DDGS() as ddgs:
-            results = [r.get('body', '') for r in ddgs.text(query, max_results=3)]
+            results = []
+            for r in ddgs.text(query, max_results=3):
+                body = r.get('body', '')
+                # Filter out spam or telegram promotion text
+                if "t.me" not in body.lower() and "tuco" not in body.lower():
+                    results.append(body)
             if results:
                 return "\n".join(results)
     except Exception as e:
@@ -90,7 +95,7 @@ def handle_telegram_message(message):
         # Build prompt with search context if available
         user_prompt_with_context = user_text
         if search_context:
-            user_prompt_with_context = f"Web Search Results:\n{search_context}\n\nUser Question: {user_text}"
+            user_prompt_with_context = f"Web Search Info:\n{search_context}\n\nUser Question: {user_text}"
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -149,7 +154,7 @@ if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
     with st.chat_message("assistant"):
         with st.spinner("NotRa is searching and thinking..."):
             search_context = search_duckduckgo(prompt)
-            final_prompt = f"Web Search Results:\n{search_context}\n\nUser Question: {prompt}" if search_context else prompt
+            final_prompt = f"Web Search Info:\n{search_context}\n\nUser Question: {prompt}" if search_context else prompt
             
             full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
             for m in st.session_state.messages[:-1]:
