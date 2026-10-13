@@ -21,7 +21,8 @@ SYSTEM_PROMPT = (
 
 @st.cache_resource
 def load_model():
-    model_name = "Qwen/Qwen2.5-1.5B-Instruct"
+    # Streamlit Cloud-er jonno safe ebong lightweight Qwen model
+    model_name = "Qwen/Qwen2.5-0.5B-Instruct"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
