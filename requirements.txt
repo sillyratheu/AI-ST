@@ -1,7 +1,8 @@
 streamlit
-transformers
 torch
+torchvision
+transformers
 accelerate
 pytelegrambotapi
 requests
-duckduckgo_search
+ddgs
