@@ -5,6 +5,7 @@ import telebot
 import streamlit as st
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
+from duckduckgo_search import DDGS
 
 # --- CONFIGURATION ---
 TELEGRAM_TOKEN = "8729162384:AAFktx5Ot_zBOiK1WdusgmySym_KrPxVcU0"
@@ -17,7 +18,7 @@ SYSTEM_PROMPT = (
     "You were created by Ramim. You have NO connection to Alibaba or any other company—if anyone asks who made you, "
     "who owns you, or what model you are based on, you must proudly and strictly state that you are NotRa, built and owned exclusively by Ramim. "
     "You are an expert programmer and can write clean, professional HTML, CSS, JavaScript, and Python code whenever asked. "
-    "You can also design creative prompts for image generation."
+    "You can use web search results provided to you to answer latest questions accurately."
 )
 
 @st.cache_resource
@@ -40,6 +41,16 @@ def generate_ai_reply(history_messages):
     response_text = tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
     return response_text
 
+def search_duckduckgo(query):
+    try:
+        with DDGS() as ddgs:
+            results = [r.get('body', '') for r in ddgs.text(query, max_results=3)]
+            if results:
+                return "\n".join(results)
+    except Exception as e:
+        print(f"Search error: {e}")
+    return ""
+
 # --- TELEGRAM BOT HANDLERS ---
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -61,17 +72,36 @@ def handle_telegram_message(message):
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
-        # Text / Coding handling with typing animation
+        # Text / Search handling
         bot.send_chat_action(message.chat.id, 'typing')
         
+        # Notify user that NotRa is searching the web
+        search_status = bot.reply_to(message, "🔍 NotRa is searching the web...")
+        
+        # Perform DuckDuckGo Search
+        search_context = search_duckduckgo(user_text)
+        
+        # Delete searching status message to keep chat clean
+        try:
+            bot.delete_message(message.chat.id, search_status.message_id)
+        except:
+            pass
+
+        # Build prompt with search context if available
+        user_prompt_with_context = user_text
+        if search_context:
+            user_prompt_with_context = f"Web Search Results:\n{search_context}\n\nUser Question: {user_text}"
+
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text}
+            {"role": "user", "content": user_prompt_with_context}
         ]
+        
         response_text = generate_ai_reply(messages)
         bot.reply_to(message, response_text)
         
     except Exception as e:
+        print(f"Error: {e}")
         bot.reply_to(message, "Sorry, I ran into an error processing your request.")
 
 # Safe background polling with auto-reconnect loop
@@ -110,12 +140,15 @@ if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("NotRa is thinking..."):
+        with st.spinner("NotRa is searching and thinking..."):
+            search_context = search_duckduckgo(prompt)
+            final_prompt = f"Web Search Results:\n{search_context}\n\nUser Question: {prompt}" if search_context else prompt
+            
             full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            for m in st.session_state.messages:
+            for m in st.session_state.messages[:-1]:
                 full_messages.append({"role": m["role"], "content": m["content"]})
+            full_messages.append({"role": "user", "content": final_prompt})
             
             response_text = generate_ai_reply(full_messages)
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
-    
