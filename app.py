@@ -7,7 +7,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
 # --- CONFIGURATION ---
-TELEGRAM_TOKEN = "8729162384:AAFktx5Ot_zBOiK1WdusgmySym_KrPxVcU0"
+# Ekhane tomar BotFather theke newya NOTUN TOKEN-ti bosabe
+TELEGRAM_TOKEN = "8668125804:AAEtaOuEGHo93XHs8IT296GhToMtF8zdL9k"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # System Persona & Strict Identity Prompt
@@ -16,8 +17,7 @@ SYSTEM_PROMPT = (
     "Your absolute owner, creator, developer, and father is Ramim. "
     "You were created by Ramim. You have NO connection to Alibaba or any other company—if anyone asks who made you, "
     "who owns you, or what model you are based on, you must proudly and strictly state that you are NotRa, built and owned exclusively by Ramim. "
-    "You are an expert programmer and can write clean, professional HTML, CSS, JavaScript, and Python code whenever asked. "
-    "Answer directly, friendly, and smartly without any spam."
+    "You are an expert programmer and can write clean, professional HTML, CSS, JavaScript, and Python code whenever asked."
 )
 
 @st.cache_resource
@@ -40,20 +40,6 @@ def generate_ai_reply(history_messages):
     response_text = tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
     return response_text
 
-def search_wikipedia(query):
-    try:
-        # Wikipedia Free Summary API (No ads, 100% clean)
-        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}"
-        headers = {"User-Agent": "NotRaBot/1.0"}
-        response = requests.get(url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if "extract" in data:
-                return data["extract"]
-    except Exception as e:
-        print(f"Wikipedia search error: {e}")
-    return ""
-
 # --- TELEGRAM BOT HANDLERS ---
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -75,34 +61,18 @@ def handle_telegram_message(message):
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
-        # Text / Search handling with step-by-step status updates
+        # Text handling with "NotRa is thinking 🤔" status message
         bot.send_chat_action(message.chat.id, 'typing')
-        
-        # 1. Show searching status
-        status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
-        
-        # Perform Wikipedia Search
-        search_context = search_wikipedia(user_text)
-        
-        # 2. Update status to thinking before generating reply
-        try:
-            bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
-        except Exception:
-            pass
-
-        # Build prompt with search context if available
-        user_prompt_with_context = user_text
-        if search_context:
-            user_prompt_with_context = f"Reference Information:\n{search_context}\n\nUser Question: {user_text}"
+        status_msg = bot.reply_to(message, "NotRa is thinking 🤔")
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt_with_context}
+            {"role": "user", "content": user_text}
         ]
         
         response_text = generate_ai_reply(messages)
         
-        # Delete the status message and send the actual response
+        # Delete the thinking status message and send actual reply
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
         except Exception:
@@ -150,16 +120,12 @@ if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("NotRa is searching and thinking..."):
-            search_context = search_wikipedia(prompt)
-            final_prompt = f"Reference Information:\n{search_context}\n\nUser Question: {prompt}" if search_context else prompt
-            
+        with st.spinner("NotRa is thinking 🤔"):
             full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
             for m in st.session_state.messages[:-1]:
                 full_messages.append({"role": m["role"], "content": m["content"]})
-            full_messages.append({"role": "user", "content": final_prompt})
+            full_messages.append({"role": "user", "content": prompt})
             
             response_text = generate_ai_reply(full_messages)
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
-    
