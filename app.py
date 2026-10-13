@@ -72,19 +72,19 @@ def handle_telegram_message(message):
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
-        # Text / Search handling
+        # Text / Search handling with step-by-step status updates
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # Notify user that NotRa is searching the web
-        search_status = bot.reply_to(message, "🔍 NotRa is searching the web...")
+        # 1. Show searching status
+        status_msg = bot.reply_to(message, "🔍 NotRa is searching the web...")
         
         # Perform DuckDuckGo Search
         search_context = search_duckduckgo(user_text)
         
-        # Delete searching status message to keep chat clean
+        # 2. Update status to thinking before generating reply
         try:
-            bot.delete_message(message.chat.id, search_status.message_id)
-        except:
+            bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
+        except Exception:
             pass
 
         # Build prompt with search context if available
@@ -98,6 +98,13 @@ def handle_telegram_message(message):
         ]
         
         response_text = generate_ai_reply(messages)
+        
+        # Delete the status message and send the actual response
+        try:
+            bot.delete_message(message.chat.id, status_msg.message_id)
+        except Exception:
+            pass
+            
         bot.reply_to(message, response_text)
         
     except Exception as e:
@@ -152,3 +159,4 @@ if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
             response_text = generate_ai_reply(full_messages)
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
+    
