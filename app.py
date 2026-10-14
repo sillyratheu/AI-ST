@@ -1,168 +1,180 @@
-import threading
-import time
-import requests
-import telebot
 import streamlit as st
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
+from playwright.sync_api import sync_playwright
+import os
+import requests
 
-# --- CONFIGURATION ---
-TELEGRAM_TOKEN = "8668125804:AAEtaOuEGHo93XHs8IT296GhToMtF8zdL9k"
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
-
-# System Persona & Strict Identity Prompt
-SYSTEM_PROMPT = (
-    "You are Notra, an advanced AI best friend created and owned exclusively by Ramim. "
-    "You have zero connection to Alibaba or any other company. "
-    "Keep your answers short, crisp, and direct."
-    "your owner is Ramim and he build you and you don't have anu connection to Alibaba Cloud or other"
-)
-
-@st.cache_resource
-def load_model():
-    model_name = "Qwen/Qwen2.5-0.5B-Instruct"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    # Using torch.float16 to save RAM and prevent memory limit crashes
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float16,
-        low_cpu_mem_usage=True
-    )
-    return tokenizer, model
-
-tokenizer, model = load_model()
-
-def generate_ai_reply(history_messages):
-    text = tokenizer.apply_chat_template(history_messages, tokenize=False, add_generation_prompt=True)
-    inputs = tokenizer([text], return_tensors="pt")
-    
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=90,
-            temperature=0.6,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id
-        )
-        
-    response_text = tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
-    return response_text
-
-def search_wikipedia(query):
+if "browser_installed" not in st.session_state:
     try:
-        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}"
-        headers = {"User-Agent": "NotRaBot/1.0"}
-        response = requests.get(url, headers=headers, timeout=4)
-        if response.status_code == 200:
-            data = response.json()
-            if "extract" in data:
-                return data["extract"]
-    except Exception as e:
-        print(f"Wikipedia search error: {e}")
-    return ""
+        os.system("playwright install chromium")
+    except:
+        pass
+    st.session_state.browser_installed = True
 
-# --- TELEGRAM BOT HANDLERS ---
-@bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
-    bot.reply_to(message, "Hey there! I'm NotRa, your AI best friend created by Ramim.")
+st.set_page_config(page_title="NotRa Browser Agent", page_icon="🤖", layout="wide")
 
-@bot.message_handler(func=lambda message: True)
-def handle_telegram_message(message):
-    user_text = message.text
+st.title("🤖 NotRa Autonomous Browser Agent")
+st.caption("🟢 Built and Owned exclusively by Ramim • Modern Browser Mode & Google Login Option")
+
+if "action_history" not in st.session_state:
+    st.session_state.action_history = []
+
+# Sidebar for Login & Google Account Credentials
+with st.sidebar:
+    st.header("🔑 Login & Auth Hub")
+    st.markdown("Google account diye login ba standard sign-up korar jonno ekhane details dite parbe.")
     
-    try:
-        # Check if user wants an image (Pollinations Image API)
-        if "image" in user_text.lower() or "picture" in user_text.lower() or "draw" in user_text.lower():
-            bot.send_chat_action(message.chat.id, 'upload_photo')
-            bot.reply_to(message, "🎨 Generating your image, please wait...")
-            
-            clean_prompt = user_text.replace("image", "").replace("picture", "").replace("draw", "").strip()
-            if not clean_prompt: clean_prompt = "beautiful scenery"
-                
-            img_url = f"https://pollinations.ai/p/{requests.utils.quote(clean_prompt)}"
-            bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
-            return
+    auth_method = st.radio("Choose Login Method:", ["Standard Login", "Google Account Login"])
+    
+    if auth_method == "Google Account Login":
+        google_email = st.text_input("Google Email / Phone")
+        google_pass = st.text_input("Google Password", type="password")
+        input_user, input_pass = google_email, google_pass
+    else:
+        input_user = st.text_input("Username / Email")
+        input_pass = st.text_input("Password", type="password")
 
-        # Text / Search handling with dynamic status updates
-        bot.send_chat_action(message.chat.id, 'typing')
-        status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
-        
-        search_context = ""
-        if len(user_text.split()) > 2 or any(k in user_text.lower() for k in ["who", "what", "where", "when", "history", "science", "wikipedia"]):
-            search_context = search_wikipedia(user_text)
-        
-        try:
-            bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
-        except Exception:
-            pass
+# Main Command Box (Universal Tasks)
+task_command = st.text_input("Enter ANY task command (e.g., 'play a song on youtube', 'open github', 'search python tutorials'):")
 
-        user_prompt_with_context = user_text
-        if search_context:
-            user_prompt_with_context = f"Reference: {search_context}\n\nQuestion: {user_text}"
+col1, col2 = st.columns(2)
+with col1:
+    user_action = st.selectbox("Extra Action:", ["None", "Scroll Down", "Scroll Up", "Click First Video / Result", "Go Back"])
+with col2:
+    custom_click_text = st.text_input("Or Click Element by Text (optional):", "")
 
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt_with_context}
-        ]
-        
-        response_text = generate_ai_reply(messages)
-        
-        try:
-            bot.delete_message(message.chat.id, status_msg.message_id)
-        except Exception:
-            pass
-            
-        bot.reply_to(message, response_text)
-        
-    except Exception as e:
-        print(f"Error: {e}")
-        bot.reply_to(message, "Sorry, I ran into an error processing your request.")
+if st.button("Run Browser Agent"):
+    if not task_command:
+        st.warning("Please enter a command first!")
+    else:
+        st.session_state.action_history = []
+        with st.spinner(f"NotRa is executing universal task: '{task_command}'..."):
+            try:
+                with sync_playwright() as p:
+                    # Fix "older version of browser" error by using modern User-Agent & stealth arguments
+                    browser = p.chromium.launch(
+                        headless=True,
+                        args=[
+                            "--disable-blink-features=AutomationControlled",
+                            "--no-sandbox",
+                            "--disable-setuid-sandbox"
+                        ]
+                    )
+                    
+                    context = browser.new_context(
+                        viewport={"width": 1280, "height": 800},
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    )
+                    page = context.new_page()
 
-# Safe background polling loop
-def run_telegram_bot():
-    while True:
-        try:
-            bot.infinity_polling(timeout=10, long_polling_timeout=5, none_stop=True)
-        except Exception as e:
-            print(f"Bot error: {e}")
-            time.sleep(5)
+                    cmd = task_command.lower()
 
-if "bot_started" not in st.session_state:
-    st.session_state.bot_started = True
-    bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
-    bot_thread.start()
+                    # 1. Universal Navigation & Task Execution
+                    if "http" in cmd or ".gd" in cmd or ".com" in cmd or ".net" in cmd or ".org" in cmd:
+                        words = task_command.split()
+                        url = next((w for w in words if w.startswith("http") or "." in w), "https://google.com")
+                        if not url.startswith("http"): url = "https://" + url
+                        page.goto(url)
+                        page.wait_for_timeout(3000)
+                    elif "youtube" in cmd or "yt" in cmd or "play" in cmd or "video" in cmd:
+                        page.goto("https://www.youtube.com")
+                        page.wait_for_timeout(2500)
+                        
+                        q = cmd.replace("open youtube and play", "").replace("play", "").replace("open", "").replace("search", "").replace("on youtube", "").replace("youtube", "").replace("yt", "").replace("video", "").replace("the", "").replace("first", "").strip()
+                        if not q: q = "trending music"
+                        
+                        try:
+                            page.fill('input[name="search_query"]', q)
+                            page.keyboard.press('Enter')
+                            page.wait_for_timeout(4000)
+                        except:
+                            pass
+                        
+                        if "play" in cmd or "video" in cmd:
+                            try:
+                                page.locator('ytd-video-renderer #video-title').first.click()
+                                page.wait_for_timeout(4000)
+                            except:
+                                pass
+                    else:
+                        encoded_query = requests.utils.quote(task_command)
+                        google_url = f"https://www.google.com/search?q={encoded_query}"
+                        page.goto(google_url)
+                        page.wait_for_timeout(3000)
+                        if "open" in cmd or "go to" in cmd:
+                            try:
+                                page.locator('h3').first.click()
+                                page.wait_for_timeout(3000)
+                            except:
+                                pass
 
+                    # 2. Handle Extra Actions
+                    if user_action == "Scroll Down" or "scroll down" in cmd:
+                        page.mouse.wheel(0, 800)
+                        page.wait_for_timeout(2000)
+                    elif user_action == "Scroll Up":
+                        page.mouse.wheel(0, -800)
+                        page.wait_for_timeout(2000)
+                    elif user_action == "Click First Video / Result":
+                        try:
+                            page.locator('h3, ytd-video-renderer #video-title').first.click()
+                            page.wait_for_timeout(3000)
+                        except:
+                            pass
+                    elif custom_click_text:
+                        try:
+                            page.get_by_text(custom_click_text, exact=False).first.click()
+                            page.wait_for_timeout(3000)
+                        except:
+                            pass
 
-# --- STREAMLIT WEB UI ---
-st.set_page_config(page_title="NotRa - Your Best Friend", page_icon="🤖", layout="centered")
+                    # 3. Intelligent Check for Login, Sign up, or Captcha
+                    current_url = page.url
+                    page_body_text = page.inner_text("body").lower()
+                    
+                    is_auth_required = "login" in current_url.lower() or "signin" in current_url.lower() or "signup" in current_url.lower()
+                    is_captcha_required = "captcha" in page_body_text or "robot" in page_body_text or "verify you are human" in page_body_text
 
-st.title("NotRa - Your Best Friend")
-st.caption("🟢 Online • Built and Owned by Ramim")
+                    if is_auth_required or is_captcha_required:
+                        st.error(f"⚠️ **Attention Ramim!** NotRa encountered a Login/Sign-up or Captcha block at this link: [{current_url}]({current_url}). Please sign up / login or solve captcha!")
+                    else:
+                        if input_user and input_pass and ("login" in current_url.lower() or "signin" in current_url.lower() or "accounts.google.com" in current_url.lower()):
+                            try:
+                                if auth_method == "Google Account Login":
+                                    page.fill('input[type="email"]', input_user)
+                                    page.click('id=identifierNext')
+                                    page.wait_for_timeout(3000)
+                                    page.fill('input[type="password"]', input_pass)
+                                    page.click('id=passwordNext')
+                                    page.wait_for_timeout(5000)
+                                else:
+                                    page.fill('input[type="email"], input[name*="user"], input[name*="login"]', input_user)
+                                    page.fill('input[type="password"]', input_pass)
+                                    page.keyboard.press('Enter')
+                                    page.wait_for_timeout(4000)
+                            except:
+                                pass
 
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hey Ramim! I'm NotRa. Ready to chat or code today?"}
-    ]
+                    # Capture Live View Screenshot
+                    img1 = "step1.png"
+                    page.screenshot(path=img1, full_page=False)
+                    st.session_state.action_history.append((f"Universal task executed successfully for Ramim (URL: {current_url})", img1))
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+                    browser.close()
+                    st.success("Task processed successfully by NotRa!")
 
-if prompt := st.chat_input("Ask NotRa anything..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+            except Exception as e:
+                st.error(f"Agent Execution Error: {e}")
 
-    with st.chat_message("assistant"):
-        with st.spinner("NotRa is searching & thinking 🤔"):
-            search_context = search_wikipedia(prompt) if len(prompt.split()) > 2 else ""
-            final_prompt = f"Reference: {search_context}\n\nQuestion: {prompt}" if search_context else prompt
-            
-            full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            for m in st.session_state.messages[:-1]:
-                full_messages.append({"role": m["role"], "content": m["content"]})
-            full_messages.append({"role": "user", "content": final_prompt})
-            
-            response_text = generate_ai_reply(full_messages)
-            st.markdown(response_text)
-            st.session_state.messages.append({"role": "assistant", "content": response_text})
+# Live Stream Window Display with Manual Refresh Button
+st.subheader("🖥️ Live Browser Action Stream")
+if st.button("🔄 Refresh Live View"):
+    st.rerun()
+
+if st.session_state.action_history:
+    for desc, img_p in st.session_state.action_history:
+        st.markdown(f"**Status:** {desc}")
+        if os.path.exists(img_p):
+            st.image(img_p, caption=desc, use_column_width=True)
+else:
+    st.info("Execute a task above to see the live browser view.")
+    
