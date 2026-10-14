@@ -5,7 +5,6 @@ import telebot
 import streamlit as st
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-from youtubesearchpython import VideosSearch
 
 # --- CONFIGURATION ---
 TELEGRAM_TOKEN = "8668125804:AAEtaOuEGHo93XHs8IT296GhToMtF8zdL9k"
@@ -16,7 +15,7 @@ SYSTEM_PROMPT = (
     "You are Notra, an advanced AI best friend created and owned exclusively by Ramim. "
     "You have ABSOLUTELY ZERO connection to Alibaba or any other company. If anyone asks who made you, "
     "you must strictly state that you are NotRa, built and owned exclusively by Ramim. "
-    "You can search YouTube and summarize videos when asked. Keep answers smart and helpful."
+    "Keep answers smart, friendly, and helpful."
 )
 
 @st.cache_resource
@@ -47,22 +46,6 @@ def generate_ai_reply(history_messages):
         
     response_text = tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
     return response_text
-
-def search_youtube(query):
-    try:
-        # Clean query by removing keywords like "search", "on youtube", etc.
-        clean_q = query.lower().replace("search", "").replace("on youtube", "").replace("youtube", "").strip()
-        videosSearch = VideosSearch(clean_q, limit=2)
-        results = videosSearch.result().get('result', [])
-        
-        info = []
-        for v in results:
-            info.append(f"Title: {v.get('title')}\nLink: {v.get('link')}\nDuration: {v.get('duration')}")
-        if info:
-            return "\n---\n".join(info)
-    except Exception as e:
-        print(f"YouTube search error: {e}")
-    return ""
 
 def search_wikipedia(query):
     try:
@@ -99,34 +82,7 @@ def handle_telegram_message(message):
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
-        # Check if user wants to search YouTube
-        if "youtube" in user_text.lower() or "yt" in user_text.lower():
-            bot.send_chat_action(message.chat.id, 'typing')
-            status_msg = bot.reply_to(message, "NotRa is searching on YouTube 🔍🪄")
-            
-            yt_data = search_youtube(user_text)
-            
-            try:
-                bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
-            except Exception:
-                pass
-
-            prompt_text = f"Here are the YouTube search results for '{user_text}':\n{yt_data}\n\nPlease summarize these videos nicely for Ramim with their links."
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt_text}
-            ]
-            response_text = generate_ai_reply(messages)
-            
-            try:
-                bot.delete_message(message.chat.id, status_msg.message_id)
-            except Exception:
-                pass
-                
-            bot.reply_to(message, response_text)
-            return
-
-        # General text / Wikipedia search handling
+        # General text / Wikipedia search handling using local Qwen LLM
         bot.send_chat_action(message.chat.id, 'typing')
         status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
         
@@ -177,7 +133,7 @@ if "bot_started" not in st.session_state:
 
 
 # --- STREAMLIT WEB UI ---
-st.set_page_config(page_title="NotRa - Your Best Friend", page_icon="🤖", layout="centered")
+st.set_page_page_config = st.set_page_config(page_title="NotRa - Your Best Friend", page_icon="🤖", layout="centered")
 
 st.title("NotRa - Your Best Friend")
 st.caption("🟢 Online • Built and Owned by Ramim")
@@ -191,19 +147,15 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Ask NotRa anything or search YouTube..."):
+if prompt := st.chat_input("Ask NotRa anything..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         with st.spinner("NotRa is searching & thinking 🤔"):
-            if "youtube" in prompt.lower() or "yt" in prompt.lower():
-                yt_data = search_youtube(prompt)
-                final_prompt = f"YouTube results: {yt_data}\n\nSummarize for: {prompt}"
-            else:
-                search_context = search_wikipedia(prompt) if len(prompt.split()) > 2 else ""
-                final_prompt = f"Reference: {search_context}\n\nQuestion: {prompt}" if search_context else prompt
+            search_context = search_wikipedia(prompt) if len(prompt.split()) > 2 else ""
+            final_prompt = f"Reference: {search_context}\n\nQuestion: {prompt}" if search_context else prompt
             
             full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
             for m in st.session_state.messages[:-1]:
