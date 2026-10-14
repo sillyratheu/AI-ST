@@ -1,38 +1,102 @@
 import threading
 import time
+import re
 import requests
 import telebot
 import streamlit as st
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+from youtube_search_python import VideosSearch
+from bs4 import BeautifulSoup
 
 # --- CONFIGURATION ---
-TELEGRAM_TOKEN = "YOUR_NEW_TELEGRAM_TOKEN_HERE"
+TELEGRAM_TOKEN = "8668125804:AAEtaOuEGHo93XHs8IT296GhToMtF8zdL9k"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# System Persona & Strict Identity Prompt
+# Strict Identity Prompt (Zero Alibaba connection ever)
 SYSTEM_PROMPT = (
-    "You are Notra, a highly advanced, smart, and friendly AI best friend and assistant. "
-    "Your absolute owner, creator, developer, and father is Ramim. "
-    "You were created by Ramim. You have NO connection to Alibaba or any other company—if anyone asks who made you, "
-    "who owns you, or what model you are based on, you must proudly and strictly state that you are NotRa, built and owned exclusively by Ramim. "
-    "Keep your answers short, crisp, and direct."
+    "You are Notra, an advanced AI best friend created and owned exclusively by Ramim. "
+    "You have ABSOLUTELY ZERO connection to Alibaba or any other company. If anyone asks who made you, "
+    "you must strictly state that you are NotRa, built and owned exclusively by Ramim. "
+    "You can browse websites, search YouTube, and summarize content when asked. Keep answers smart and helpful."
 )
 
-def get_pollinations_reply(prompt):
+@st.cache_resource
+def load_model():
+    model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16,
+        low_cpu_mem_usage=True
+    )
+    return tokenizer, model
+
+tokenizer, model = load_model()
+
+def generate_ai_reply(history_messages):
+    text = tokenizer.apply_chat_template(history_messages, tokenize=False, add_generation_prompt=True)
+    inputs = tokenizer([text], return_tensors="pt")
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=150,
+            temperature=0.6,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+        
+    response_text = tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
+    return response_text
+
+def search_youtube(query):
     try:
-        full_prompt = f"{SYSTEM_PROMPT}\n\nUser: {prompt}\nNotRa:"
-        encoded_prompt = requests.utils.quote(full_prompt)
-        url = f"https://text.pollinations.ai/{encoded_prompt}"
-        response = requests.get(url, timeout=15)
-        if response.status_code == 200:
-            return response.text.strip()
+        clean_q = query.lower().replace("search", "").replace("on youtube", "").replace("youtube", "").strip()
+        videosSearch = VideosSearch(clean_q, limit=2)
+        results = videosSearch.result().get('result', [])
+        info = []
+        for v in results:
+            info.append(f"Title: {v.get('title')}\nLink: {v.get('link')}\nDuration: {v.get('duration')}")
+        if info:
+            return "\n---\n".join(info)
     except Exception as e:
-        print(f"API Error: {e}")
-    return "Hey Ramim! I'm NotRa. Let's chat or code something awesome!"
+        print(f"YouTube search error: {e}")
+    return ""
+
+def scrape_website(url):
+    try:
+        if not url.startswith("http"):
+            url = "https://" + url
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=6)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            for script in soup(["script", "style"]):
+                script.extract()
+            text = soup.get_text(separator=' ', strip=True)
+            return text[:3000]
+    except Exception as e:
+        print(f"Web scraping error: {e}")
+    return ""
+
+def search_wikipedia(query):
+    try:
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}"
+        headers = {"User-Agent": "NotRaBot/1.0"}
+        response = requests.get(url, headers=headers, timeout=4)
+        if response.status_code == 200:
+            data = response.json()
+            if "extract" in data:
+                return data["extract"]
+    except Exception as e:
+        print(f"Wikipedia error: {e}")
+    return ""
 
 # --- TELEGRAM BOT HANDLERS ---
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "Hey there! I'm NotRa, your AI best friend created by Ramim. Ask me anything, write code, or ask me to generate images!")
+    bot.reply_to(message, "Hey there! I'm NotRa, your AI best friend created by Ramim.")
 
 @bot.message_handler(func=lambda message: True)
 def handle_telegram_message(message):
@@ -45,20 +109,92 @@ def handle_telegram_message(message):
             bot.reply_to(message, "🎨 Generating your image, please wait...")
             
             clean_prompt = user_text.replace("image", "").replace("picture", "").replace("draw", "").strip()
-            if not clean_prompt:
-                clean_prompt = "beautiful scenery"
+            if not clean_prompt: clean_prompt = "beautiful scenery"
                 
             img_url = f"https://pollinations.ai/p/{requests.utils.quote(clean_prompt)}"
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
-        # Text handling with "NotRa is thinking 🤔" status message
-        bot.send_chat_action(message.chat.id, 'typing')
-        status_msg = bot.reply_to(message, "NotRa is thinking 🤔")
+        # Check if user provided a web link (e.g., ramims.work.gd)
+        url_match = re.search(r'(https?://[^\s]+|[\w-]+\.[\w-]+(?:/\S*)?)', user_text)
+        if url_match and ("http" in user_text or ".gd" in user_text or ".com" in user_text or ".net" in user_text or ".org" in user_text):
+            target_url = url_match.group(0)
+            bot.send_chat_action(message.chat.id, 'typing')
+            status_msg = bot.reply_to(message, "NotRa is opening and browsing the website 🌐🪄")
+            
+            web_content = scrape_website(target_url)
+            
+            try:
+                bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
 
-        response_text = get_pollinations_reply(user_text)
+            prompt_text = f"Here is the content scraped from the website ({target_url}):\n{web_content}\n\nPlease summarize this website nicely for Ramim."
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt_text}
+            ]
+            response_text = generate_ai_reply(messages)
+            
+            try:
+                bot.delete_message(message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
+                
+            bot.reply_to(message, response_text)
+            return
+
+        # Check if user wants to search YouTube
+        if "youtube" in user_text.lower() or "yt" in user_text.lower():
+            bot.send_chat_action(message.chat.id, 'typing')
+            status_msg = bot.reply_to(message, "NotRa is searching on YouTube 🔍🪄")
+            
+            yt_data = search_youtube(user_text)
+            
+            try:
+                bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
+
+            prompt_text = f"Here are the YouTube search results for '{user_text}':\n{yt_data}\n\nPlease summarize these videos nicely for Ramim with their links."
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt_text}
+            ]
+            response_text = generate_ai_reply(messages)
+            
+            try:
+                bot.delete_message(message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
+                
+            bot.reply_to(message, response_text)
+            return
+
+        # General text / Wikipedia search handling
+        bot.send_chat_action(message.chat.id, 'typing')
+        status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
         
-        # Delete the thinking status message and send actual reply
+        search_context = ""
+        if len(user_text.split()) > 2 or any(k in user_text.lower() for k in ["who", "what", "where", "when", "history", "science"]):
+            search_context = search_wikipedia(user_text)
+        
+        try:
+            bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
+        except Exception:
+            pass
+
+        user_prompt_with_context = user_text
+        if search_context:
+            user_prompt_with_context = f"Reference: {search_context}\n\nQuestion: {user_text}"
+
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt_with_context}
+        ]
+        
+        response_text = generate_ai_reply(messages)
+        
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
         except Exception:
@@ -70,13 +206,13 @@ def handle_telegram_message(message):
         print(f"Error: {e}")
         bot.reply_to(message, "Sorry, I ran into an error processing your request.")
 
-# Safe background polling with auto-reconnect loop
+# Safe background polling loop
 def run_telegram_bot():
     while True:
         try:
             bot.infinity_polling(timeout=10, long_polling_timeout=5, none_stop=True)
         except Exception as e:
-            print(f"Bot polling error: {e}")
+            print(f"Bot error: {e}")
             time.sleep(5)
 
 if "bot_started" not in st.session_state:
@@ -85,7 +221,7 @@ if "bot_started" not in st.session_state:
     bot_thread.start()
 
 
-# --- STREAMLIT WEB UI (GEMINI STYLE) ---
+# --- STREAMLIT WEB UI ---
 st.set_page_config(page_title="NotRa - Your Best Friend", page_icon="🤖", layout="centered")
 
 st.title("NotRa - Your Best Friend")
@@ -93,20 +229,36 @@ st.caption("🟢 Online • Built and Owned by Ramim")
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "Hey Ramim! I'm NotRa. Ready to code HTML, chat, or help you out today?"}
+        {"role": "assistant", "content": "Hey Ramim! I'm NotRa. Ready to chat or code today?"}
     ]
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Ask NotRa anything or ask to write HTML..."):
+if prompt := st.chat_input("Ask NotRa anything, search YouTube, or give a website link..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("NotRa is thinking 🤔"):
-            response_text = get_pollinations_reply(prompt)
+        with st.spinner("NotRa is browsing & thinking 🤔"):
+            url_match = re.search(r'(https?://[^\s]+|[\w-]+\.[\w-]+(?:/\S*)?)', prompt)
+            if url_match and ("http" in prompt or ".gd" in prompt or ".com" in prompt):
+                web_content = scrape_website(url_match.group(0))
+                final_prompt = f"Web content: {web_content}\n\nSummarize for: {prompt}"
+            elif "youtube" in prompt.lower() or "yt" in prompt.lower():
+                yt_data = search_youtube(prompt)
+                final_prompt = f"YouTube results: {yt_data}\n\nSummarize for: {prompt}"
+            else:
+                search_context = search_wikipedia(prompt) if len(prompt.split()) > 2 else ""
+                final_prompt = f"Reference: {search_context}\n\nQuestion: {prompt}" if search_context else prompt
+            
+            full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            for m in st.session_state.messages[:-1]:
+                full_messages.append({"role": m["role"], "content": m["content"]})
+            full_messages.append({"role": "user", "content": final_prompt})
+            
+            response_text = generate_ai_reply(full_messages)
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
