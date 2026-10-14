@@ -5,4 +5,4 @@ transformers
 accelerate
 pytelegrambotapi
 requests
-youTubesearchpython
+youtubesearchpython
