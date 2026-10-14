@@ -1,7 +1,9 @@
 streamlit
 torch
-torchvision
 transformers
 accelerate
 pytelegrambotapi
 requests
+youtube-search-python
+beautifulsoup4
+
