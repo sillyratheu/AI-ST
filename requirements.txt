@@ -1,4 +1,7 @@
 streamlit
+torch
+torchvision
+transformers
+accelerate
 pytelegrambotapi
 requests
-youtubesearchpython
