@@ -6,7 +6,7 @@ import telebot
 import streamlit as st
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-from youtube_search_python import VideosSearch
+from youtubesearchpython import VideosSearch
 from bs4 import BeautifulSoup
 
 # --- CONFIGURATION ---
@@ -222,43 +222,5 @@ if "bot_started" not in st.session_state:
 
 
 # --- STREAMLIT WEB UI ---
-st.set_page_config(page_title="NotRa - Your Best Friend", page_icon="🤖", layout="centered")
-
-st.title("NotRa - Your Best Friend")
-st.caption("🟢 Online • Built and Owned by Ramim")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hey Ramim! I'm NotRa. Ready to chat or code today?"}
-    ]
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-if prompt := st.chat_input("Ask NotRa anything, search YouTube, or give a website link..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    with st.chat_message("assistant"):
-        with st.spinner("NotRa is browsing & thinking 🤔"):
-            url_match = re.search(r'(https?://[^\s]+|[\w-]+\.[\w-]+(?:/\S*)?)', prompt)
-            if url_match and ("http" in prompt or ".gd" in prompt or ".com" in prompt):
-                web_content = scrape_website(url_match.group(0))
-                final_prompt = f"Web content: {web_content}\n\nSummarize for: {prompt}"
-            elif "youtube" in prompt.lower() or "yt" in prompt.lower():
-                yt_data = search_youtube(prompt)
-                final_prompt = f"YouTube results: {yt_data}\n\nSummarize for: {prompt}"
-            else:
-                search_context = search_wikipedia(prompt) if len(prompt.split()) > 2 else ""
-                final_prompt = f"Reference: {search_context}\n\nQuestion: {prompt}" if search_context else prompt
-            
-            full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            for m in st.session_state.messages[:-1]:
-                full_messages.append({"role": m["role"], "content": m["content"]})
-            full_messages.append({"role": "user", "content": final_prompt})
-            
-            response_text = generate_ai_reply(full_messages)
-            st.markdown(response_text)
-            st.session_state.messages.append({"role": "assistant", "content": response_text})
+st.
+    
