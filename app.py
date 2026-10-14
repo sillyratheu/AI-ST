@@ -3,37 +3,50 @@ import time
 import requests
 import telebot
 import streamlit as st
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
 # --- CONFIGURATION ---
 TELEGRAM_TOKEN = "8668125804:AAEtaOuEGHo93XHs8IT296GhToMtF8zdL9k"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Hugging Face Free Inference API for Qwen-2.5-0.5B (Zero RAM Crash)
-HF_API_URL = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-0.5B-Instruct"
-HF_HEADERS = {"Authorization": "Bearer hf_your_token_here"}
-
+# System Persona & Strict Identity Prompt
 SYSTEM_PROMPT = (
     "You are Notra, an advanced AI best friend created and owned exclusively by Ramim. "
     "You have zero connection to Alibaba or any other company. "
     "Keep your answers short, crisp, and direct."
 )
 
-def query_huggingface_api(prompt):
-    payload = {
-        "inputs": f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n",
-        "parameters": {"max_new_tokens": 120, "temperature": 0.7, "return_full_text": False}
-    }
-    try:
-        response = requests.post(HF_API_URL, headers=HF_HEADERS, json=payload, timeout=10)
-        if response.status_code == 200:
-            res_json = response.json()
-            if isinstance(res_json, list) and len(res_json) > 0:
-                return res_json[0].get("generated_text", "").strip()
-    except Exception as e:
-        print(f"HF API Error: {e}")
-    return "Hey Ramim! Let's chat about something awesome!"
+@st.cache_resource
+def load_model():
+    model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # Using torch.float16 to save RAM and prevent memory limit crashes
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16,
+        low_cpu_mem_usage=True
+    )
+    return tokenizer, model
 
-# 1. Wikipedia Search API
+tokenizer, model = load_model()
+
+def generate_ai_reply(history_messages):
+    text = tokenizer.apply_chat_template(history_messages, tokenize=False, add_generation_prompt=True)
+    inputs = tokenizer([text], return_tensors="pt")
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=90,
+            temperature=0.6,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+        
+    response_text = tokenizer.decode(outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True)
+    return response_text
+
 def search_wikipedia(query):
     try:
         url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}"
@@ -44,22 +57,7 @@ def search_wikipedia(query):
             if "extract" in data:
                 return data["extract"]
     except Exception as e:
-        print(f"Wiki error: {e}")
-    return ""
-
-# 2. SearXNG Browser Search API (Clean & ad-free)
-def search_searxng(query):
-    try:
-        url = f"https://searx.be/search?q={requests.utils.quote(query)}&format=json"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=4)
-        if response.status_code == 200:
-            results = response.json().get("results", [])
-            snippets = [r.get("content", "") for r in results[:3] if r.get("content")]
-            if snippets:
-                return "\n".join(snippets)
-    except Exception as e:
-        print(f"SearXNG error: {e}")
+        print(f"Wikipedia search error: {e}")
     return ""
 
 # --- TELEGRAM BOT HANDLERS ---
@@ -72,37 +70,41 @@ def handle_telegram_message(message):
     user_text = message.text
     
     try:
-        # Check if user wants an image
+        # Check if user wants an image (Pollinations Image API)
         if "image" in user_text.lower() or "picture" in user_text.lower() or "draw" in user_text.lower():
             bot.send_chat_action(message.chat.id, 'upload_photo')
             bot.reply_to(message, "🎨 Generating your image, please wait...")
             
             clean_prompt = user_text.replace("image", "").replace("picture", "").replace("draw", "").strip()
             if not clean_prompt: clean_prompt = "beautiful scenery"
-            
+                
             img_url = f"https://pollinations.ai/p/{requests.utils.quote(clean_prompt)}"
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
-        # Text / Search handling with status updates
+        # Text / Search handling with dynamic status updates
         bot.send_chat_action(message.chat.id, 'typing')
         status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
         
-        # Try Wikipedia first, then SearXNG browser search if needed
-        search_context = search_wikipedia(user_text)
-        if not search_context and len(user_text.split()) > 1:
-            search_context = search_searxng(user_text)
+        search_context = ""
+        if len(user_text.split()) > 2 or any(k in user_text.lower() for k in ["who", "what", "where", "when", "history", "science", "wikipedia"]):
+            search_context = search_wikipedia(user_text)
         
         try:
             bot.edit_message_text("🤔 NotRa is thinking...", message.chat.id, status_msg.message_id)
         except Exception:
             pass
 
-        final_prompt = user_text
+        user_prompt_with_context = user_text
         if search_context:
-            final_prompt = f"Reference: {search_context}\n\nQuestion: {user_text}"
+            user_prompt_with_context = f"Reference: {search_context}\n\nQuestion: {user_text}"
 
-        response_text = query_huggingface_api(final_prompt)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt_with_context}
+        ]
+        
+        response_text = generate_ai_reply(messages)
         
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
@@ -152,13 +154,15 @@ if prompt := st.chat_input("Ask NotRa anything..."):
 
     with st.chat_message("assistant"):
         with st.spinner("NotRa is searching & thinking 🤔"):
-            search_context = search_wikipedia(prompt)
-            if not search_context:
-                search_context = search_searxng(prompt)
-                
+            search_context = search_wikipedia(prompt) if len(prompt.split()) > 2 else ""
             final_prompt = f"Reference: {search_context}\n\nQuestion: {prompt}" if search_context else prompt
-            response_text = query_huggingface_api(final_prompt)
             
+            full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            for m in st.session_state.messages[:-1]:
+                full_messages.append({"role": m["role"], "content": m["content"]})
+            full_messages.append({"role": "user", "content": final_prompt})
+            
+            response_text = generate_ai_reply(full_messages)
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
     
