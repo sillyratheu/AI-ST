@@ -10,7 +10,13 @@ import torch
 TELEGRAM_TOKEN = "8668125804:AAEtaOuEGHo93XHs8IT296GhToMtF8zdL9k"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Strict Identity Prompt
+# Clear any old external webhooks causing forced joins
+try:
+    bot.remove_webhook()
+except Exception:
+    pass
+
+# Strict Identity Prompt (No Alibaba connection ever)
 SYSTEM_PROMPT = (
     "You are Notra, an advanced AI best friend created and owned exclusively by Ramim. "
     "You have ABSOLUTELY ZERO connection to Alibaba or any other company. If anyone asks who made you, "
@@ -24,7 +30,7 @@ def load_model():
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float32,  # Use float32 for stability on CPU servers
+        torch_dtype=torch.float32,
         low_cpu_mem_usage=True
     )
     return tokenizer, model
@@ -70,6 +76,7 @@ def handle_telegram_message(message):
     user_text = message.text
 
     try:
+        # Check if user wants an image
         if "image" in user_text.lower() or "picture" in user_text.lower() or "draw" in user_text.lower():
             bot.send_chat_action(message.chat.id, 'upload_photo')
             bot.reply_to(message, "🎨 Generating your image, please wait...")
@@ -81,6 +88,7 @@ def handle_telegram_message(message):
             bot.send_photo(message.chat.id, img_url, caption="Made by NotRa")
             return
 
+        # General text / Wikipedia search handling using local Qwen LLM
         bot.send_chat_action(message.chat.id, 'typing')
         status_msg = bot.reply_to(message, "🔍 NotRa is searching...")
 
@@ -115,6 +123,7 @@ def handle_telegram_message(message):
         print(f"Error: {e}")
         bot.reply_to(message, "Sorry, I ran into an error processing your request.")
 
+# Safe background polling loop
 def run_telegram_bot():
     while True:
         try:
