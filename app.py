@@ -7,7 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
 # --- CONFIGURATION ---
-TELEGRAM_TOKEN = "8668125804:AAEtaOuEGHo93XHs8IT296GhToMtF8zdL9k"
+TELEGRAM_TOKEN = "8668125804:AAGSALz_2I2nfOYa9xBy3zI3Jh_QG2eWruM"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # Clear any old external webhooks causing forced joins
