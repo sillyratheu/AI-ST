@@ -123,7 +123,7 @@ def handle_telegram_message(message):
         print(f"Error: {e}")
         bot.reply_to(message, "Sorry, I ran into an error processing your request.")
 
-# Safe background polling loop
+# Safe background polling loop for Telegram
 def run_telegram_bot():
     while True:
         try:
@@ -138,36 +138,9 @@ if "bot_started" not in st.session_state:
     bot_thread.start()
 
 
-# --- STREAMLIT WEB UI ---
-st.set_page_config(page_title="NotRa - Your Best Friend", page_icon="🤖", layout="centered")
+# --- STREAMLIT LIGHTWEIGHT STATUS UI (No Chat History / No Storage Usage) ---
+st.set_page_config(page_title="NotRa Bot Status", page_icon="🤖", layout="centered")
 
-st.title("NotRa - Your Best Friend")
-st.caption("🟢 Online • Built and Owned by Ramim")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hey Ramim! I'm NotRa. Ready to chat or code today?"}
-    ]
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-if prompt := st.chat_input("Ask NotRa anything..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    with st.chat_message("assistant"):
-        with st.spinner("NotRa is searching & thinking 🤔"):
-            search_context = search_wikipedia(prompt) if len(prompt.split()) > 2 else ""
-            final_prompt = f"Reference: {search_context}\n\nQuestion: {prompt}" if search_context else prompt
-
-            full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            for m in st.session_state.messages[:-1]:
-                full_messages.append({"role": m["role"], "content": m["content"]})
-            full_messages.append({"role": "user", "content": final_prompt})
-
-            response_text = generate_ai_reply(full_messages)
-            st.markdown(response_text)
-            st.session_state.messages.append({"role": "assistant", "content": response_text})
+st.title("🤖 NotRa Telegram Bot Host")
+st.success("🟢 Bot is running live 24/7 on Telegram!")
+st.info("💡 All chats, message histories, and memory are handled directly inside Telegram. Streamlit has zero chat connection and is only hosting the background process to keep storage and memory usage minimal.")
